@@ -49,7 +49,7 @@ def get_status(req=None, resp=None):
     rv = {
         "counter": watchdog_counter,
         "ttl": watchdog_ttl,
-        "pin": bool(mosfet_pin.value()),
+        "mosfet": ["off", "on"][mosfet_pin.value()],
         "resets": reset_count,
         "running": watchdog_running,
         "uptime": time.time(),
@@ -87,7 +87,7 @@ def do_powercycle(req=None, resp=None):
     reset_count += 1
     toggle_timer = Timer(-1)
     mosfet_off()
-    toggle_timer.init(period=1000, mode=Timer.ONE_SHOT, callback=mosfet_on)
+    toggle_timer.init(period=5_000, mode=Timer.ONE_SHOT, callback=mosfet_on)
     if req:
         yield from jsonify(resp, {"reboot": True, "reset_count": reset_count})
 
@@ -97,7 +97,7 @@ def set_auto(req=None, resp=None):
     global watchdog_counter, watchdog_timer, watchdog_running
     watchdog_counter = watchdog_ttl
     watchdog_timer = Timer(-1)
-    watchdog_timer.init(period=1000, mode=Timer.PERIODIC, callback=wd_callback)
+    watchdog_timer.init(period=1_000, mode=Timer.PERIODIC, callback=wd_callback)
     watchdog_running = True
     if req:
         yield from jsonify(resp, {"mosfet": "auto"})
