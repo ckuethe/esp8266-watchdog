@@ -26,6 +26,7 @@ watchdog_ttl = 300
 watchdog_running = False
 watchdog_timer = None
 reset_count = 0
+boot_time = None
 
 
 def mosfet_off(_=None):
@@ -37,11 +38,25 @@ def mosfet_on(_=None):
 
 
 def wd_callback(_=None):
-    global watchdog_counter
+    global watchdog_counter, reset_count
     watchdog_counter -= 1
     if watchdog_counter <= 0:
         watchdog_counter = watchdog_ttl
+        reset_count += 1
         do_powercycle()
+
+
+def set_auto():
+    global watchdog_counter, watchdog_timer, watchdog_running, watchdog_ttl
+
+    watchdog_counter = watchdog_ttl
+    if watchdog_timer:
+        watchdog_timer.deinit()
+        watchdog_timer = None
+
+    watchdog_timer = Timer(-1)
+    watchdog_timer.init(period=1_000, mode=Timer.PERIODIC, callback=wd_callback)
+    watchdog_running = True
 
 
 @app.route("/")
@@ -49,10 +64,10 @@ def get_status(req=None, resp=None):
     rv = {
         "counter": watchdog_counter,
         "ttl": watchdog_ttl,
-        "mosfet": ["off", "on"][mosfet_pin.value()],
+        "mosfet_on": bool(mosfet_pin.value()),
         "resets": reset_count,
         "running": watchdog_running,
-        "uptime": time.time(),
+        "uptime": time.time() - boot_time,
     }
     yield from jsonify(resp, rv)
 
@@ -65,8 +80,7 @@ def set_off(req=None, resp=None):
         watchdog_timer = None
         watchdog_running = False
     mosfet_off()
-    if req:
-        yield from jsonify(resp, {"mosfet": "off"})
+    yield from jsonify(resp, {"mosfet": "off", "watchdog": "off"})
 
 
 @app.route("/on")
@@ -77,8 +91,7 @@ def set_on(req=None, resp=None):
         watchdog_timer = None
         watchdog_running = False
     mosfet_on()
-    if req:
-        yield from jsonify(resp, {"mosfet": "on"})
+    yield from jsonify(resp, {"mosfet": "on", "watchdog": "off"})
 
 
 @app.route("/reboot")
@@ -87,20 +100,14 @@ def do_powercycle(req=None, resp=None):
     reset_count += 1
     toggle_timer = Timer(-1)
     mosfet_off()
-    toggle_timer.init(period=5_000, mode=Timer.ONE_SHOT, callback=mosfet_on)
-    if req:
-        yield from jsonify(resp, {"reboot": True, "reset_count": reset_count})
+    toggle_timer.init(period=10_000, mode=Timer.ONE_SHOT, callback=mosfet_on)
+    yield from jsonify(resp, {"reboot": True, "reset_count": reset_count})
 
 
 @app.route("/auto")
-def set_auto(req=None, resp=None):
-    global watchdog_counter, watchdog_timer, watchdog_running
-    watchdog_counter = watchdog_ttl
-    watchdog_timer = Timer(-1)
-    watchdog_timer.init(period=1_000, mode=Timer.PERIODIC, callback=wd_callback)
-    watchdog_running = True
-    if req:
-        yield from jsonify(resp, {"mosfet": "auto"})
+def do_auto(req=None, resp=None):
+    set_auto()
+    yield from jsonify(resp, {"mosfet": "auto", "watchdog": "on"})
 
 
 @app.route("/feed")
@@ -131,9 +138,15 @@ def set_ttl(req=None, resp=None):
         yield from jsonify(resp, {"op": op, "ttl": watchdog_ttl})
 
 
+def cb_time(_=None):
+    _ = time.time()
+
+
 def main():
+    global boot_time, reset_count
+    boot_time = time.time()
     clock_correcting_timer = Timer(-1)
-    clock_correcting_timer.init(period=60_000, mode=Timer.PERIODIC, callback=lambda x: time.time())
+    clock_correcting_timer.init(period=60_000, mode=Timer.PERIODIC, callback=cb_time)
 
     set_auto()
     app.run(debug=True, host="0.0.0.0", port=80)
