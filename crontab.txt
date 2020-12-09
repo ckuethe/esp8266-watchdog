@@ -1,0 +1,3 @@
+# watchdog
+@reboot									curl --silent -o /dev/null http://watchdog/feed
+*	*					*   *   *		curl --silent -o /dev/null http://watchdog/feed
